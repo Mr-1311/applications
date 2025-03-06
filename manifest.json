@@ -1,21 +1,29 @@
 {
-	"name": "plugin_template_rust",
-	"description": "plugin template for puppet, with rust",
-	"author": "_",
+	"name": "applications",
+	"description": "list and run applications",
+	"author": "Puppet",
 	"source": "_",
 	"platforms": [
 		"windows",
 		"linux",
 		"macos"
 	],
-	"allowedPaths": [],
+	"allowedPaths": [
+		"/"
+	],
 	"allowedHosts": [],
-	"wasi": false,
+	"wasi": true,
+	"cli": true,
 	"pluginArgs": [
 		{
-			"name": "item text",
-			"description": "change text on the item",
-			"defaultValue": "item from rust template"
+			"name": "application filter",
+			"description": "applications list to list, comma(,) separated",
+			"defaultValue": ""
+		},
+		{
+			"name": "additional paths",
+			"description": "additional paths to search for applications, comma(,) separated",
+			"defaultValue": ""
 		}
 	]
 }

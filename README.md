@@ -1,33 +1,39 @@
-# Puppet Plugin Template (Rust)
+# Applications Plugin for Puppet
 
-This is a template project for creating Puppet plugins using Rust. Follow the instructions below to get started with your plugin development.
+A Puppet plugin that lists and runs applications installed on your system.
 
-## Important Note
+## Features
 
-When creating your plugin, **do not modify the plugin name in `Cargo.toml`**. Instead, change the plugin name in `manifest.json`. This ensures proper plugin identification and loading in Puppet.
+- Lists applications from standard system directories
+- Opens applications directly from Puppet
+- Supports filtering applications by name
+- Allows adding custom search paths
+- Cross-platform compatible (macOS implementation currently available)
 
-## Prerequisites
+## Configuration
 
-Before building the plugin, ensure you have the WebAssembly target installed for Rust. If you haven't added it yet, run:
+The plugin accepts two configuration parameters:
 
-```bash
-rustup target add wasm32-unknown-unknown
-# if you are going to use wasi api's add wasi target
-rustup target add wasm32-wasip1
+1. `application filter` - Comma-separated list of application names to include. If empty, all applications are listed.
+```
+Example: "Firefox,Chrome,Visual Studio Code"
 ```
 
-## Building
-
-To build your plugin, use the following command:
-
-```bash
-cargo build --release --target wasm32-unknown-unknown && cp ./target/wasm32-unknown-unknown/release/plugin.wasm .
-# if you used wasi api, for example file operations, build wiht wasi target, and set "wasi" to "true" at manifest.json
-cargo build --release --target wasm32-wasip1 && cp ./target/wasm32-wasip1/release/plugin.wasm .
+2. `additional paths` - Comma-separated list of additional directories to scan for applications.
+```
+Example: "/Users/username/CustomApps,/opt/applications"
 ```
 
-This will compile your Rust code into WebAssembly, which can be loaded by Puppet.
+## Default Search Paths
 
-## Output
+On macOS, the plugin searches for applications in:
+- `/Applications`
+- `~/Applications`
+- Any additional paths specified in the configuration
 
-Your wasm binary should be located at the root of the plugin folder and file name must be `plugin.wasm`.
+## Platform Support
+
+- ✅ macOS - Fully implemented
+- 🚧 Windows - Planned
+- 🚧 Linux - Planned
+
