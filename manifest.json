@@ -2,7 +2,7 @@
 	"name": "applications",
 	"description": "list and run applications",
 	"author": "Puppet",
-	"source": "_",
+	"source": "https://github.com/Mr-1311/applications",
 	"platforms": [
 		"windows",
 		"linux",
