@@ -1,3 +1,4 @@
+// gcc linux_list_apps.c -o linux_list_apps $(pkg-config --cflags --libs gtk+-3.0)
 #include <gtk/gtk.h>
 #include <glib.h>
 #include <stdio.h>
