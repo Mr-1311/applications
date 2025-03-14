@@ -1,10 +1,10 @@
 use extism_pdk::*;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::cell::RefCell;
 use std::collections::HashMap;
 
 thread_local! {
-    static APP_PATHS: RefCell<HashMap<String, String>> = RefCell::new(HashMap::new());
+    static APP_PATHS: RefCell<HashMap<String, (String, Vec<String>)>> = RefCell::new(HashMap::new());
 }
 
 #[host_fn]
@@ -28,6 +28,9 @@ pub fn init() -> FnResult<Json<Vec<PluginCommand>>> {
     if platform.eq("macos") {
         return get_applications_macos();
     }
+    if platform.eq("linux") {
+        return get_applications_linux();
+    }
 
     Ok(Json(vec![]))
 }
@@ -40,12 +43,9 @@ pub fn filter(_query: String) -> FnResult<Json<Vec<PluginCommand>>> {
 #[plugin_fn]
 pub fn on_select(selected: String) -> FnResult<()> {
     APP_PATHS.with(|paths| {
-        if let Some(app_path) = paths.borrow().get(&selected) {
-            // Launch the application using 'open' command
-            let open_cmd = "open";
-            let open_args = vec![app_path.to_string()];
+        if let Some((command, args)) = paths.borrow().get(&selected) {
             unsafe {
-                cli_run(open_cmd.to_string(), Json(open_args))?;
+                cli_run(command.clone(), Json(args.clone()))?;
             }
         }
         Ok(())
@@ -157,11 +157,14 @@ fn get_applications_macos() -> FnResult<Json<Vec<PluginCommand>>> {
                                 icon_path.join(format!("{}.icns", icon_file))
                             };
 
-                            // Store app path in the thread-local map
                             APP_PATHS.with(|paths| {
-                                paths
-                                    .borrow_mut()
-                                    .insert(name.clone(), path.to_string_lossy().into_owned());
+                                paths.borrow_mut().insert(
+                                    name.clone(),
+                                    (
+                                        "open".to_string(),
+                                        vec![path.to_string_lossy().into_owned()],
+                                    ),
+                                );
                             });
 
                             // Add the application to the list
@@ -174,6 +177,80 @@ fn get_applications_macos() -> FnResult<Json<Vec<PluginCommand>>> {
                     }
                 }
             }
+        }
+    }
+
+    Ok(Json(applications))
+}
+
+#[derive(Deserialize)]
+struct AppInfo {
+    name: String,
+    exec: String,
+    description: String,
+    icon_path: String,
+}
+
+// Function to get applications on Linux
+fn get_applications_linux() -> FnResult<Json<Vec<PluginCommand>>> {
+    // Get additional paths from config
+    let additional_paths: String = config::get("additional paths")
+        .unwrap_or(Some("".to_owned()))
+        .unwrap_or("".to_owned());
+
+    // Get application filter from config
+    let application_filter: Vec<String> = config::get("application filter")
+        .unwrap_or(Some("".to_owned()))
+        .unwrap_or("".to_owned())
+        .split(',')
+        .filter(|s| !s.trim().is_empty())
+        .map(|s| s.trim().to_owned())
+        .collect();
+
+    // Execute /data/linux_list_apps and get JSON output
+    let json_output = unsafe {
+        cli_run(
+            "/data/linux_list_apps".to_string(),
+            Json(vec![additional_paths]),
+        )
+    }?;
+
+    // Parse JSON output into a vector of AppInfo
+    let apps: Vec<AppInfo> = serde_json::from_str(&json_output).map_err(Error::from)?;
+
+    let mut applications = Vec::new();
+
+    // Process each application
+    for app in apps {
+        // Apply filter if present
+        if !application_filter.is_empty()
+            && !application_filter
+                .iter()
+                .any(|f| f.to_lowercase() == app.name.to_lowercase())
+        {
+            continue;
+        }
+
+        // Split exec field into command and arguments, removing % placeholders
+        let parts = shlex::split(&app.exec).unwrap_or(vec![app.exec.clone()]);
+        let filtered_parts: Vec<String> =
+            parts.into_iter().filter(|p| !p.starts_with('%')).collect();
+
+        if !filtered_parts.is_empty() {
+            let command = filtered_parts[0].clone();
+            let args = filtered_parts[1..].to_vec();
+
+            // Store command and args in APP_PATHS for launching
+            APP_PATHS.with(|paths| {
+                paths.borrow_mut().insert(app.name.clone(), (command, args));
+            });
+
+            // Add to applications list
+            applications.push(PluginCommand {
+                name: app.name,
+                description: app.description,
+                icon: app.icon_path, // Use absolute icon path directly
+            });
         }
     }
 
