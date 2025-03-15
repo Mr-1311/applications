@@ -33,7 +33,7 @@ On macOS, the plugin searches for applications in:
 
 ## Platform Support
 
-- ✅ macOS - Fully implemented
+- ✅ macOS
 - 🚧 Windows - Planned
-- 🚧 Linux - Planned
+- ✅ Linux (gtk+-3.0 required)
 
