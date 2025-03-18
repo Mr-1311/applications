@@ -34,6 +34,6 @@ On macOS, the plugin searches for applications in:
 ## Platform Support
 
 - ✅ macOS
-- 🚧 Windows - Planned
+- ✅ Windows
 - ✅ Linux (gtk+-3.0 required)
 

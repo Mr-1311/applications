@@ -1,3 +1,5 @@
+#![allow(non_snake_case)]
+
 use extism_pdk::*;
 use serde::{Deserialize, Serialize};
 use std::cell::RefCell;
@@ -30,6 +32,9 @@ pub fn init() -> FnResult<Json<Vec<PluginCommand>>> {
     }
     if platform.eq("linux") {
         return get_applications_linux();
+    }
+    if platform.eq("windows") {
+        return get_applications_windows();
     }
 
     Ok(Json(vec![]))
@@ -189,6 +194,178 @@ struct AppInfo {
     exec: String,
     description: String,
     icon_path: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct WindowsAppInfo {
+    FullName: String,
+    Extension: String,
+    BaseName: String,
+}
+
+fn get_applications_windows() -> FnResult<Json<Vec<PluginCommand>>> {
+    let mut applications = Vec::new();
+    let mut all_apps = Vec::new();
+
+    // Get data folder path from config
+    let data_folder = config::get("data_dir_path")
+        .unwrap_or(Some("data".to_owned()))
+        .unwrap_or("data".to_owned());
+
+    let windows_icons_dir = format!("{}/windowsIcons", data_folder);
+
+    // Create windowsIcons directory if it doesn't exist and get existing icons
+    let existing_icons: Vec<String> = unsafe {
+        // Create directory if it doesn't exist
+        cli_run(
+            "powershell".to_string(),
+            Json(vec![
+                "-Command".to_string(),
+                format!(
+                    "New-Item -ItemType Directory -Path '{}' -Force; Get-ChildItem -Path '{}' -Filter *.png | Select-Object -ExpandProperty Name",
+                    windows_icons_dir, windows_icons_dir
+                ),
+            ]),
+        )?
+        .lines()
+        .map(|s| s.trim().to_string())
+        .collect()
+    };
+
+    // Get APPDATA path for user's Start Menu
+    let appdata = unsafe {
+        cli_run(
+            "powershell".to_string(),
+            Json(vec!["$Env:APPDATA".to_owned()]),
+        )
+    }?
+    .trim()
+    .to_string();
+
+    // Get default Start Menu paths
+    let default_paths = vec![
+        "\"C:\\ProgramData\\Microsoft\\Windows\\Start Menu\"".to_string(),
+        format!("\"{}\\Microsoft\\Windows\\Start Menu\"", appdata),
+    ];
+
+    // First scan Start Menu locations for .lnk files only
+    let start_menu_apps: Vec<WindowsAppInfo> = unsafe {
+        let json_output = cli_run(
+            "powershell".to_string(),
+            Json(vec![
+                format!("{}/getWindowsApps.ps1", data_folder),
+                "-FolderPaths".to_string(),
+                // "\"C:\\ProgramData\\Microsoft\\Windows\\Start Menu\"".to_string(),
+                default_paths.join(","),
+                // default_paths.join(",").replace("\\", "\\\\"),
+                "-FileExtensions".to_string(),
+                "*.lnk".to_string(),
+            ]),
+        )?;
+        serde_json::from_str(&json_output).map_err(Error::from)?
+    };
+
+    all_apps.extend(start_menu_apps);
+
+    // Get and scan additional paths for both .exe and .lnk files
+    let additional_paths: Vec<String> = config::get("additional paths")
+        .unwrap_or(Some("".to_owned()))
+        .unwrap_or("".to_owned())
+        .split(',')
+        .filter(|s| !s.trim().is_empty())
+        .map(|s| format!("\"{}\"", s.trim().to_owned()))
+        .collect();
+
+    if !additional_paths.is_empty() {
+        let additional_apps: Vec<WindowsAppInfo> = unsafe {
+            let json_output = cli_run(
+                "powershell".to_string(),
+                Json(vec![
+                    format!("{}/getWindowsApps.ps1", data_folder),
+                    "-FolderPaths".to_string(),
+                    // additional_paths.join(",").replace("\\", "\\\\"),
+                    additional_paths.join(","),
+                    "-FileExtensions".to_string(),
+                    "\"*.exe\", \"*.lnk\"".to_string(),
+                ]),
+            )?;
+            serde_json::from_str(&json_output).map_err(Error::from)?
+        };
+
+        all_apps.extend(additional_apps);
+    }
+
+    // Get applications filter from config
+    let application_filter: Vec<String> = config::get("application filter")
+        .unwrap_or(Some("".to_owned()))
+        .unwrap_or("".to_owned())
+        .split(',')
+        .filter(|s| !s.trim().is_empty())
+        .map(|s| s.trim().to_owned())
+        .collect();
+
+    // Process all found applications
+    for app in all_apps {
+        if !application_filter.is_empty()
+            && !application_filter
+                .iter()
+                .any(|f| f.to_lowercase() == app.BaseName.to_lowercase())
+        {
+            continue;
+        }
+
+        let icon_filename = format!("{}.png", app.BaseName);
+        let icon_path = format!("{}/{}", windows_icons_dir, icon_filename);
+
+        // Check if icon exists in our cached list
+        if !existing_icons.contains(&icon_filename) {
+            // Extract icon using PowerShell
+            unsafe {
+                cli_run(
+                    "powershell".to_string(),
+                    Json(vec![
+                        format!("{}/getIcon.ps1", data_folder),
+                        "-InFilePath".to_string(),
+                        format!("\"{}\"", app.FullName.clone()),
+                        "-OutFilePath".to_string(),
+                        format!("\"{}\"", icon_path.clone()),
+                    ]),
+                )
+                .unwrap_or_default();
+            }
+        }
+
+        let (command, args) = if app.Extension == ".lnk" {
+            (
+                "cmd".to_string(),
+                vec![
+                    "/c".to_string(),
+                    "start".to_string(),
+                    "".to_string(),
+                    app.FullName,
+                ],
+            )
+        } else {
+            (
+                "powershell".to_owned(),
+                vec!["start".to_owned(), format!("\"{}\"", app.FullName)],
+            )
+        };
+
+        APP_PATHS.with(|paths| {
+            paths
+                .borrow_mut()
+                .insert(app.BaseName.clone(), (command, args));
+        });
+
+        applications.push(PluginCommand {
+            name: app.BaseName,
+            description: String::new(),
+            icon: icon_path,
+        });
+    }
+
+    Ok(Json(applications))
 }
 
 // Function to get applications on Linux
