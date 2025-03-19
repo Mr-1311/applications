@@ -64,7 +64,11 @@ fn get_applications_macos() -> FnResult<Json<Vec<PluginCommand>>> {
     let mut applications = Vec::new();
 
     // Get HOME directory using cli_run
-    let mut scan_dirs = vec![PathBuf::from("/Applications")];
+    let mut scan_dirs = vec![
+        PathBuf::from("/Applications"),
+        PathBuf::from("/System/Applications"),
+        PathBuf::from("/System/Applications/Utilities"),
+    ];
 
     // Try to get home directory, continue without it if fails
     if let Ok(home_path) =
